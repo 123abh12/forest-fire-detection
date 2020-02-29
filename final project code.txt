@@ -1,0 +1,183 @@
+#include <dht.h>
+#include <MQ2.h>
+#include <LiquidCrystal.h>
+#include<TinyGPS.h>
+#include<SoftwareSerial.h>
+#include<Wire.h>
+#define dht_apin 2 // Analog Pin sensor is connected to
+dht DHT;
+SoftwareSerial Gsm(19, 18);
+int analog_input_mq2= A0;
+int analog_input_mq9= A2;
+MQ2 mq2=(analog_input_mq2);
+
+char phone_no[] = "9971450703"; //repl2ace with phone no. to get sms
+TinyGPS gps;  //Creates a new instance of the TinyGPS object
+//Declaring the lcd pins
+
+const int rs = 8, en = 7, d4 = 3, d5 = 4, d6 = 5, d7 = 6;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+void setup()
+{
+  Serial.begin(9600);
+  Gsm.begin(9600);
+  lcd.begin(16, 2);
+  mq2.begin();
+  
+}
+ void loop()
+ { 
+  dhttemperature();
+  mq2readings();
+  mq9readings();
+ 
+ }
+ void GsmGps()
+{
+ analog_input_mq2= analogRead(A0);
+ analog_input_mq9= analogRead(A2);
+ Serial.print("analog_reading_mq2 =");
+  Serial.println(analog_input_mq2);
+  Serial.print("analog_reading_mq9 =");
+  Serial.println(analog_input_mq9);
+  // we'll need to change the range from the analog reading (0-1023) down to the range
+  // used by analogWrite (0-255) with map!
+  int i = map(analog_input_mq2, 0, 1023, 0, 255);
+  int j = map(analog_input_mq9, 0, 1023, 0, 255);
+  Serial.print(i);
+    Serial.print(j);
+  // LED gets brighter the harder you press
+if(i>100 || j> 20)
+{
+
+  bool newData = false;
+  unsigned long chars;
+  unsigned short sentences, failed;
+ 
+  // For one second we parse GPS data and report some key values
+  for (unsigned long start = millis(); millis() - start < 1000;)
+  {
+    while (Serial.available())
+    {
+      char c = Serial.read();
+      Serial.print(c);
+      if (gps.encode(c))
+        newData = true;  
+    }
+  }
+ 
+  if (newData)      //If newData is true
+  {
+    float flat, flon;
+    unsigned long age;
+    gps.f_get_position(&flat, &flon, &age);  
+    Gsm.print("AT+CMGF=1\r");
+    delay(400);
+    Gsm.print("AT+CMGS=\"");
+    Gsm.print(phone_no);
+    Gsm.println("\"");
+   
+    delay(300);
+    Gsm.print("http://maps.google.com/maps?q=loc:");
+   
+   // Gsm.print("Latitude = ");
+Serial.print("Latitude=       ");
+    Gsm.print(flat == TinyGPS::GPS_INVALID_F_ANGLE ? 0.0 : flat, 6);
+    //Gsm.print(" Longitude = ");
+    Serial.print(",");
+Serial.print("Longitude= ");
+    Gsm.print(flon == TinyGPS::GPS_INVALID_F_ANGLE ? 0.0 : flon, 6);
+    delay(200);
+    Gsm.println((char)26); // End AT command with a ^Z, ASCII code 26
+    delay(200);
+    Gsm.println();
+  }
+  Serial.println(failed);
+}// if (chars == 0)
+// Serial.println("** No characters received from GPS: check wiring **");
+}
+
+
+void dhttemperature() 
+{
+    DHT.read11(dht_apin);
+    
+    Serial.print("Current humidity = ");
+    Serial.print(DHT.humidity);
+    Serial.print("%  ");
+    Serial.print("temperature = ");
+    Serial.print(DHT.temperature); 
+    Serial.println("C  ");
+    lcd.print("t=");
+    lcd.print(DHT.temperature);
+    lcd.print("h=");
+    lcd.print(DHT.humidity);
+    
+  
+   if(DHT.temperature>30)
+   {
+   GsmGps();
+  }
+delay(1000);
+}
+
+void mq2readings()
+{
+int Analog_Input = A0;
+int lpg, co, smoke;
+
+MQ2 mq2(Analog_Input);
+  float* values= mq2.read(true); //set it false if you don't want to print the values in the Serial
+  //lpg = values[0];
+  lpg = mq2.readLPG();
+  //co = values[1];
+  co = mq2.readCO();
+  //smoke = values[2];
+  smoke = mq2.readSmoke();
+  lcd.setCursor(0,0);
+  lcd.print("LPG:");
+  lcd.print(lpg);
+  lcd.print(" CO:");
+  lcd.print(co);
+  lcd.setCursor(0,1);
+  lcd.print("SMOKE:");
+  lcd.print(smoke);
+  
+
+if(lpg>100 || smoke>100 || co>100)
+  {
+    GsmGps();
+  }
+  delay(2000);
+}
+void mq9readings() 
+{ 
+ float sensor_volt;  
+ float RS_air; //  Rs in clean air 
+ float R0;  // R0 in 1000 ppm LPG 
+ float sensorValue; 
+//Average   
+   for(int x = 0 ; x < 100 ; x++) 
+ { 
+   sensorValue = sensorValue + analogRead(A2); 
+ } 
+ sensorValue = sensorValue/100.0; 
+ sensor_volt = (sensorValue/1024)*5.0; 
+ RS_air = (5.0-sensor_volt)/sensor_volt; // Depend on RL on yor module 
+ R0 = RS_air/9.9; // According to MQ9 datasheet table 
+ Serial.print("sensor_volt = "); 
+ Serial.print(sensor_volt); 
+ Serial.println("V");
+ Serial.print("R0 = "); 
+ Serial.println(R0); 
+ Serial.println("--------------------------------------------------");
+
+ lcd.print("RO");
+ lcd.print(R0);
+ 
+ lcd.clear();
+ if(sensor_volt>20 || R0>20)
+ { GsmGps();
+ }
+delay(3000); 
+}
